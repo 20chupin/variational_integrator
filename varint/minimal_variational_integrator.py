@@ -97,6 +97,7 @@ class VariationalIntegrator:
         # force_approximation: QuadratureRule = QuadratureRule.TRAPEZOIDAL,
         newton_descent_tolerance: float = 1e-14,
         ignore_initial_constraints=False,
+        use_cse: bool = True,
     ):
         """
         Parameters
@@ -143,6 +144,7 @@ class VariationalIntegrator:
         self.jac = jac
         self.discrete_approximation = discrete_approximation
         self.control_type = control_type
+        self.use_cse = use_cse
 
         if controls is None:
             self.controls = np.zeros((self.biorbd_model.nbQ(), self.nb_steps))
@@ -171,7 +173,7 @@ class VariationalIntegrator:
 
         if jac is None:
             q_sym = MX.sym("q", (biorbd_model.nbQ(), 1))
-            self.jac = Function("no_constraint", [q_sym], [MX.zeros(q_init.shape)], ["q"], ["zero"]).expand()
+            self.jac = Function("no_constraint", [q_sym], [MX.zeros(q_init.shape)], ["q"], ["zero"], {'cse': self.use_cse}).expand()
 
         self._declare_mx()
         self._declare_discrete_euler_lagrange_equations()
@@ -220,7 +222,7 @@ class VariationalIntegrator:
         )
         output = [D2_L_q0_q0dot + D1_Ld_q0_q1 + f0_minus - constraint_term]
 
-        initial_states_fun = Function("initial_states", [q0, q0_dot, q1, f0_minus, self.lambdas], output).expand()
+        initial_states_fun = Function("initial_states", [q0, q0_dot, q1, f0_minus, self.lambdas], output, {'cse': self.use_cse}).expand()
 
         mx_residuals = initial_states_fun(
             q_init, q_dot_init, q1, self.control_approximation(self.controls[:, 0], self.controls[:, 1]), self.lambdas
@@ -238,6 +240,7 @@ class VariationalIntegrator:
             "initial_states_residuals",
             [decision_variables],
             [mx_residuals],
+            {'cse': self.use_cse}
         ).expand()
 
         # Create a implicit function instance to solve the system of equations
@@ -279,7 +282,7 @@ class VariationalIntegrator:
         )
         output = [-D2_L_qN_qN_dot + D2_Ld_qN_minus_1_qN - constraint_term + fd_plus]
 
-        final_states_fun = Function("final_velocity", [qN, qN_dot, qN_minus_1, fd_plus, self.lambdas], output).expand()
+        final_states_fun = Function("final_velocity", [qN, qN_dot, qN_minus_1, fd_plus, self.lambdas], output, {'cse': self.use_cse}).expand()
 
         mx_residuals = final_states_fun(
             q_ultimate,
@@ -301,6 +304,7 @@ class VariationalIntegrator:
             "final_states_residuals",
             [decision_variables],
             [mx_residuals],
+            {'cse': self.use_cse}
         ).expand()
 
         # Create a implicit function instance to solve the system of equations
@@ -368,7 +372,7 @@ class VariationalIntegrator:
             )
         ]
 
-        self.dela = Function(f"DEL", self.sym_list, output).expand()
+        self.dela = Function(f"DEL", self.sym_list, output, {'cse': self.use_cse}).expand()
 
     def _declare_residuals(self, q_prev, q_cur, control_prev, control_cur, control_next):
         """
@@ -389,6 +393,7 @@ class VariationalIntegrator:
             "Residuals",
             [decision_variables],
             [mx_residuals],
+            {'cse': self.use_cse}
         ).expand()
 
         # Create a implicit function instance to solve the system of equations
